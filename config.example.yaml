@@ -1,0 +1,141 @@
+# novel-engine-next 配置示例
+# 复制为 config.yaml 并填入 api_key。
+
+llm:
+  default_provider: deepseek
+
+  providers:
+    deepseek:
+      type: openai
+      base_url: "https://api.deepseek.com"
+      api_key: ""
+      default_model: "deepseek-v4-flash"
+      temperature: 0.7
+      max_tokens: 8192
+      enabled: true
+
+    gemini:
+      type: openai
+      base_url: "https://generativelanguage.googleapis.com/v1beta/openai/"
+      api_key: ""
+      default_model: "gemini-2.5-flash"
+      temperature: 0.7
+      max_tokens: 8192
+      enabled: false
+
+    claude:
+      type: openai
+      base_url: "https://openrouter.ai/api/v1"
+      api_key: ""
+      default_model: "anthropic/claude-sonnet-4"
+      temperature: 0.7
+      max_tokens: 8192
+      enabled: false
+
+    openai:
+      type: openai
+      base_url: "https://api.openai.com/v1"
+      api_key: ""
+      default_model: "gpt-4o-mini"
+      temperature: 0.7
+      max_tokens: 8192
+      enabled: false
+
+  # 键名 = LLMClient 注册名（非 Python 类名）。合并类可共用多键以分别调模型/温度。
+  agents:
+    # PlannerAgent
+    planner:
+      provider: deepseek
+      model: "deepseek-v4-flash"
+      temperature: 0.7
+    meta:                      # PlannerAgent.generate_meta；StyleLearnerAgent
+      provider: deepseek
+      model: "deepseek-v4-flash"
+      temperature: 0.5
+    volume_planner:            # PlannerAgent.plan_volumes
+      provider: deepseek
+      model: "deepseek-v4-flash"
+      temperature: 0.4
+    # ChapterPlannerAgent / CharacterAgent
+    chapter_planner:
+      temperature: 0.65
+    character:
+      temperature: 0.7
+    # WriterAgent / RevisionAgent
+    writer:
+      provider: deepseek
+      model: "deepseek-v4-pro"
+      temperature: 0.8
+    revision:
+      provider: deepseek
+      model: "deepseek-v4-pro"
+      temperature: 0.5
+    # ReviewerAgent（consistency + critic）；NarrativeLedgerAgent.scan_toxin 共用 critic
+    consistency:
+      temperature: 0.15
+    critic:
+      temperature: 0.25
+    # EditorAgent
+    editor:
+      provider: deepseek
+      model: "deepseek-v4-pro"
+      temperature: 0.75
+    # WorldKeeperAgent
+    faction:
+      temperature: 0.2
+    lore:
+      temperature: 0.2
+    # NarrativeLedgerAgent（foreshadow + payoff 共用 foreshadow 键）
+    foreshadow:
+      temperature: 0.2
+    # ImpactAgent
+    impact:
+      temperature: 0.2
+
+embedding:
+  base_url: "https://api.openai.com/v1"
+  api_key: ""
+  model: "text-embedding-3-small"
+  retrieval_k: 4
+  chunk_chars: 600
+
+database:
+  url: "sqlite:///./data/novel_engine_next.db"
+
+# Pending 仅在章节定稿后产生；以下策略控制哪些候选有资格进入人工审批区。
+pending:
+  require_evidence: true       # evidence 必须是该章正文中的连续原文
+  per_chapter:
+    character: 1               # 核心角色；轻量人物应进入 cast
+    cast: 2
+    faction: 1
+    faction_relation: 1
+    lore: 2
+  min_importance:
+    character: 0.75
+    cast: 0.60
+    faction: 0.75
+    faction_relation: 0.75
+    lore: 0.70
+
+# 质量门（写章 graph + 定稿阻断；可被 novel.quality_gate JSON 覆盖）
+# 提案生命周期：仅定稿时提取 → pending → 人工确认后入正式库（不在写章时自动入账）
+# Community 默认 L2（开源）：展示检查 + 可去 AI 味；不阻断定稿、不自动 rewrite。
+# 云端产品可改为 block_finalize/auto_rewrite_on_critical: true。
+quality_gate:
+  block_finalize: false
+  auto_rewrite_on_critical: false
+  auto_humanize_on_fix: true
+  max_quality_rewrite_rounds: 1
+  strict_publish_audit: true
+  require_pending_confirm: false   # true 时预留给「有未确认提案则提示」；默认不阻断写章
+
+app:
+  host: "127.0.0.1"
+  port: 8000
+  outline_window: 3
+  max_auto_revise_rounds: 1
+  # 写章上下文预算（估算 token）。留空则按全书章数自适应：
+  # ≤50 章 full=30000 / 51–150 章 sliding=26000 / >150 章 layered=22000。
+  # 裁剪次序：L3 外部参考 → L2 写法 → L1 规划 → L0 事实（摘要/角色状态最后裁）。
+  # context_budget_tokens: 26000
