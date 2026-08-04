@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+config.yaml
+*.db
+*.db-wal
+*.db-shm
+data/
+.venv/
+venv/
+.idea/
+.vscode/
+

@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>novel-engine · Community</title>
+  <link rel="stylesheet" href="/static/style.css?v=20260715" />
+</head>
+<body>
+  <div id="app">
+    <!-- 左侧：小说列表 -->
+    <aside id="sidebar">
+      <div class="sidebar-header">
+        <h1>📖 小说引擎</h1>
+        <button class="btn primary sm" onclick="ui.showCreateForm()">＋ 新建</button>
+      </div>
+      <ul id="novel-list"></ul>
+    </aside>
+
+    <!-- 主区域 -->
+    <main id="main">
+      <!-- 欢迎页 / 新建表单 -->
+      <section id="welcome" class="panel">
+        <div class="welcome-inner">
+          <h2>novel-engine</h2>
+          <p class="muted">Planner · ChapterPlanner · Character · Writer · Reviewer · Editor · WorldKeeper · NarrativeLedger · Revision · Impact · MemoryService · StyleLearner · HealthCheck</p>
+          <div id="create-form" class="card hidden">
+            <h3>新建小说</h3>
+            <label>书名<input id="f-title" placeholder="未命名小说" /></label>
+            <label>故事方向 / 创意 *<textarea id="f-premise" rows="4"
+              placeholder="例如：一个能听见建筑物说话的拆迁评估员，发现某栋老楼里藏着改变城市命运的秘密……"></textarea></label>
+            <div class="row">
+              <label>类型<input id="f-genre" placeholder="都市奇幻" /></label>
+              <label>总章数<input id="f-chapters" type="number" value="20" min="1" /></label>
+              <label>每章字数<input id="f-words" type="number" value="3000" min="300" /></label>
+            </div>
+            <label>全局写作指导（可选）<textarea id="f-guidance" rows="2"
+              placeholder="文风、视角、禁忌等要求"></textarea></label>
+            <div class="actions">
+              <button class="btn primary" onclick="ui.createNovel()">创建</button>
+              <button class="btn" onclick="ui.hideCreateForm()">取消</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 工作台 -->
+      <section id="workbench" class="hidden">
+        <header id="wb-header">
+          <div>
+            <h2 id="wb-title"></h2>
+            <span id="wb-meta" class="muted"></span>
+          </div>
+          <button class="btn danger sm" onclick="ui.deleteNovel()">删除小说</button>
+        </header>
+
+        <nav id="tabs">
+          <button class="tab active" data-tab="blueprint">① 蓝图</button>
+          <button class="tab" data-tab="characters">② 角色</button>
+          <button class="tab" data-tab="outlines">③ 细纲</button>
+          <button class="tab" data-tab="chapters">④ 章节</button>
+          <button class="tab" data-tab="lore">⑤ 设定库</button>
+          <button class="tab" data-tab="state">⑥ 全局状态</button>
+        </nav>
+
+        <div id="tab-content"></div>
+      </section>
+    </main>
+
+    <!-- 右侧：Agent 进度面板 -->
+    <aside id="progress-panel" class="hidden">
+      <div class="sidebar-header"><h3>⚙️ Agent 进度</h3>
+        <button id="job-cancel" class="btn sm danger hidden"
+          onclick="actions.cancelActiveJob()">取消任务</button>
+        <button class="btn sm" onclick="ui.hideProgress()">收起</button></div>
+      <ul id="progress-steps"></ul>
+      <div id="progress-log"></div>
+    </aside>
+  </div>
+
+  <!-- 片段重写浮层 -->
+  <div id="segment-toolbar" class="segment-toolbar hidden">
+    <button class="btn primary sm" onclick="ui.openSegmentRevise()">✂ 重写</button>
+    <button class="btn sm" onclick="ui.runSegmentPolish()">✨ 润色</button>
+    <button class="btn sm" onclick="ui.runSegmentHumanize()">🧹 去AI味</button>
+  </div>
+
+  <!-- AI 修订弹窗 -->
+  <div id="modal-mask" class="hidden" onclick="ui.closeModal(event)">
+    <div class="modal card" onclick="event.stopPropagation()">
+      <h3 id="modal-title">AI 修订</h3>
+      <p class="muted" id="modal-desc"></p>
+      <textarea id="modal-instruction" rows="4" placeholder="描述你想怎么改，例如：把主角的动机改成为了救妹妹；语气更冷峻一些"></textarea>
+      <div class="actions">
+        <button class="btn primary" id="modal-confirm">提交修订</button>
+        <button class="btn" onclick="ui.closeModal()">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 片段重写弹窗 -->
+  <div id="segment-modal-mask" class="hidden" onclick="ui.closeSegmentModal(event)">
+    <div class="modal card" onclick="event.stopPropagation()">
+      <h3>片段重写</h3>
+      <p class="muted">只重写下方选中片段，章节其余正文保持不变</p>
+      <label>选中片段
+        <textarea id="segment-preview" rows="5" readonly></textarea>
+      </label>
+      <label>修改要求 / 评论
+        <textarea id="segment-instruction" rows="3"
+          placeholder="例如：这段对话太说明文，改成更有潜台词；语气再冷一点"></textarea>
+      </label>
+      <div class="actions">
+        <button class="btn primary" id="segment-confirm">重写片段</button>
+        <button class="btn" onclick="ui.closeSegmentModal()">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js?v=20260727a"></script>
+</body>
+</html>
