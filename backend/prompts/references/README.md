@@ -23,5 +23,5 @@ root; the summary of third-party material is in `NOTICE`.
 
 Sibling assets under `backend/prompts/assets/` share the same lineage; see `NOTICE`.
 
-Which reference goes to which agent is decided in `backend/context/assembler.py`.
-Reasoning behind the selection is recorded in `PROMPTS_SUPPLEMENT.md`.
+Which reference is appended for which agent, and for which chapters, is decided
+in `backend/context/assembler.py`.
