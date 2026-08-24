@@ -10,3 +10,7 @@ venv/
 .idea/
 .vscode/
 
+# internal notes, kept out of the published repo
+STRATEGY.md
+ENHANCEMENTS.md
+

@@ -1,5 +1,38 @@
+novel-engine
 Copyright (C) 2026 Huaji-Wang
 
-This product includes software developed for novel-engine.
-Licensed under the GNU Affero General Public License v3.0 (AGPL-3.0).
-See the LICENSE file for details.
+This product is licensed under the GNU Affero General Public License v3.0
+(AGPL-3.0). See the LICENSE file for the full text.
+
+================================================================================
+Third-party material
+================================================================================
+
+Part of the writing-reference and prompt-asset material in this project is
+derived from ainovel-cli (https://github.com/voocel/ainovel-cli), which is
+licensed under the Apache License, Version 2.0. A copy of that license is
+included in this repository as LICENSE-APACHE-2.0.
+
+Reproduced without modification:
+
+  backend/prompts/references/character-building.md
+  backend/prompts/references/character-template.md
+  backend/prompts/references/dialogue-writing.md
+  backend/prompts/references/longform-planning.md
+
+Derived from ainovel-cli and modified by the novel-engine authors:
+
+  backend/prompts/references/chapter-guide.md
+  backend/prompts/references/consistency.md
+  backend/prompts/references/hook-techniques.md
+  backend/prompts/references/outline-template.md
+  backend/prompts/references/quality-checklist.md
+  backend/prompts/assets/anti-ai-tone.md          (from assets/references/anti-ai-tone.md)
+  backend/prompts/assets/default-rules.md         (from assets/rules/default.md)
+  backend/prompts/assets/writer-anti-ai-extra.md  (excerpted from assets/prompts/writer.md)
+
+The FORBIDDEN_PHRASES and FATIGUE_WORDS constants in backend/prompts/anti_ai.py
+are also derived from ainovel-cli's assets/rules/default.md.
+
+Per-file provenance and change notes are recorded in
+backend/prompts/references/README.md.

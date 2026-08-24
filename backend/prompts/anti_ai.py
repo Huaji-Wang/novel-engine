@@ -1,8 +1,10 @@
-"""ainovel-cli 去 AI 味基线。
+"""去 AI 味基线。
 
-语义判据：assets/anti-ai-tone.md（与 ainovel-cli references/anti-ai-tone.md 同步，勿删条目）
+语义判据：assets/anti-ai-tone.md（条目为整体判据，勿删减）
 机械规则：assets/default-rules.md + 下方常量（供 health_check 程序扫描）
-Writer 补充：assets/writer-anti-ai-extra.md（ainovel-cli writer.md 去 AI 味 / 句式多样性段）
+Writer 补充：assets/writer-anti-ai-extra.md（去 AI 味 / 句式多样性段）
+
+以上素材的来源与改动情况见仓库根目录 NOTICE。
 """
 
 from __future__ import annotations
@@ -11,7 +13,7 @@ from pathlib import Path
 
 _ASSETS = Path(__file__).resolve().parent / "assets"
 
-# 来自 ainovel-cli assets/rules/default.md（health_check 程序扫描用，与 default-rules.md 一致）
+# health_check 程序扫描用，与 default-rules.md 保持一致
 FORBIDDEN_PHRASES: tuple[str, ...] = (
     "某种程度上",
     "值得注意的是",
@@ -54,7 +56,7 @@ def load_mechanical_rules() -> str:
 
 
 def load_writer_anti_ai_extra() -> str:
-    """ainovel-cli writer.md 中与去 AI 味相关的补充约束（非 anti-ai-tone 正文）。"""
+    """Writer 侧与去 AI 味相关的补充约束（非 anti-ai-tone 正文）。"""
     return _read_asset("writer-anti-ai-extra.md")
 
 

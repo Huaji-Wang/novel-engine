@@ -71,4 +71,4 @@ def arc_planner_references() -> str:
 def append_reference_block(prompt: str, pack: str) -> str:
     if not pack or pack == "（无额外参考资料）":
         return prompt
-    return prompt + "\n\n【补充参考资料（ainovel-cli 引入，供对照，勿逐字复述）】\n" + pack
+    return prompt + "\n\n【补充参考资料（供对照，勿逐字复述）】\n" + pack
