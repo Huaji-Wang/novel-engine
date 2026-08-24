@@ -17,6 +17,8 @@ def format_compass_context(compass: dict | None) -> str:
         lines.append("活跃长线：" + "；".join(str(t) for t in threads[:8]))
     if compass.get("estimated_scale"):
         lines.append(f"规模预期：{compass['estimated_scale']}")
+    if compass.get("tone_notes"):
+        lines.append(f"调性/禁区：{compass['tone_notes']}")
     return "\n".join(lines) if lines else "（尚未建立终局指南针）"
 
 

@@ -9,16 +9,20 @@
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import json
 import logging
-from typing import Iterator
+import queue
+import threading
+from collections.abc import AsyncIterator, Callable, Iterator
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
 from backend.agents.chapter_planner import ChapterPlannerAgent
 from backend.agents.character import CharacterAgent, merge_card_data
+from backend.agents.cocreate import format_cocreate_context
 from backend.agents.editor import EditorAgent
 from backend.agents.impact import ImpactAgent
 from backend.agents.narrative_ledger import (
@@ -33,6 +37,7 @@ from backend.agents.worldkeeper import (
     WorldKeeperAgent,
     format_factions_brief,
 )
+from backend.planning.guidance import chapter_cap, guides_from_novel, is_scale_open
 from backend.api.schemas import (
     AppendVolumeRequest,
     DeepenCharactersRequest,
@@ -87,7 +92,7 @@ from backend.db.models import (
     WritingStyleProfile,
 )
 from backend.db.session import db_session
-from backend.graph.blueprint_graph import BLUEPRINT_STEPS, build_blueprint_graph
+from backend.graph.blueprint_graph import BLUEPRINT_STEPS, iter_blueprint_steps
 from backend.graph.chapter_graph import CHAPTER_STEPS, build_chapter_graph
 from backend.utils.chapter_health import check_chapter_health
 
@@ -96,6 +101,7 @@ router = APIRouter(prefix="/api/novels", tags=["generation"])
 
 SSE_HEADERS = {
     "Cache-Control": "no-cache",
+    "Connection": "keep-alive",
     "X-Accel-Buffering": "no",
 }
 
@@ -104,8 +110,52 @@ def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
-def _sse_response(gen: Iterator[str]) -> StreamingResponse:
+def _sse_response(gen: Iterator[str] | AsyncIterator[str]) -> StreamingResponse:
     return StreamingResponse(gen, media_type="text/event-stream", headers=SSE_HEADERS)
+
+
+async def _sse_from_worker(
+    *,
+    preamble: list[tuple[str, dict]],
+    worker: Callable[[Callable[[str, dict], None]], None],
+    heartbeat_seconds: float = 15.0,
+    heartbeat_message: str = "仍在生成中，请稍候…",
+) -> AsyncIterator[str]:
+    """在线程里跑阻塞流水线，主协程立即推 SSE，并定期心跳，避免长时间无输出像卡死。"""
+    for event, data in preamble:
+        yield _sse(event, data)
+    q: queue.Queue[tuple[str, dict] | None] = queue.Queue()
+    status = {"heartbeat": heartbeat_message}
+
+    def emit(event: str, data: dict | None = None) -> None:
+        payload = data or {}
+        if event == "step_start" and payload.get("label"):
+            status["heartbeat"] = f"正在执行：{payload['label']}（模型调用中，请稍候）…"
+        elif event == "log" and payload.get("message"):
+            # 保留最近日志作心跳文案
+            status["heartbeat"] = str(payload["message"])
+        q.put((event, payload))
+
+    def run() -> None:
+        try:
+            worker(emit)
+        except Exception as e:  # noqa: BLE001
+            logger.exception("SSE worker 失败")
+            q.put(("error", {"message": str(e)}))
+        finally:
+            q.put(None)
+
+    threading.Thread(target=run, daemon=True).start()
+    while True:
+        try:
+            item = await asyncio.to_thread(q.get, True, heartbeat_seconds)
+        except queue.Empty:
+            yield _sse("log", {"message": status["heartbeat"]})
+            continue
+        if item is None:
+            break
+        event, data = item
+        yield _sse(event, data)
 
 
 def _load_novel(novel_id: int) -> dict:
@@ -120,7 +170,13 @@ def _load_novel(novel_id: int) -> dict:
             "narrative_pov": novel.narrative_pov,
             "num_chapters": novel.num_chapters,
             "words_per_chapter": novel.words_per_chapter,
-            "user_guidance": novel.user_guidance,
+            "guide_style": getattr(novel, "guide_style", "") or "",
+            "guide_pov": getattr(novel, "guide_pov", "") or "",
+            "guide_taboos": getattr(novel, "guide_taboos", "") or "",
+            "is_fanfic": bool(getattr(novel, "is_fanfic", 0)),
+            "cocreate_draft": getattr(novel, "cocreate_draft", "") or "",
+            "cocreate_ready": bool(getattr(novel, "cocreate_ready", 0)),
+            "cocreate_locks": dict(getattr(novel, "cocreate_locks", None) or {}),
             "full_story": novel.full_story,
             "core_seed": novel.core_seed,
             "character_dynamics": novel.character_dynamics,
@@ -134,6 +190,18 @@ def _load_novel(novel_id: int) -> dict:
             "story_compass": novel.story_compass or {},
             "writing_style_rules": novel.writing_style_rules or {},
         }
+
+
+def _novel_guide_kwargs(novel: dict) -> dict:
+    g = guides_from_novel(novel)
+    return {
+        **g,
+        "cocreate_context": format_cocreate_context(
+            draft=novel.get("cocreate_draft") or "",
+            locks=novel.get("cocreate_locks") or {},
+            is_fanfic=bool(novel.get("is_fanfic")),
+        ),
+    }
 
 
 def _effective_quality_gate(novel: dict) -> dict:
@@ -595,7 +663,6 @@ def _outline_plan_blocks(
         existing_outlines=existing_text,
         start_no=start_no,
         end_no=end_no,
-        user_guidance=novel["user_guidance"],
         foreshadowing_ledger=format_ledger(_load_ledger(novel_id)),
         volume_context=format_volume_context(volumes, start_no, end_no),
         arc_context=format_arc_context(volumes, start_no, end_no),
@@ -603,6 +670,7 @@ def _outline_plan_blocks(
         factions_brief=format_factions_brief(*_load_factions(novel_id)),
         payoff_ledger=format_payoff_ledger(
             _load_payoffs(novel_id), up_to_chapter=start_no - 1),
+        **_novel_guide_kwargs(novel),
     )
     if expand_arc:
         return planner.plan_arc_expand(
@@ -621,6 +689,7 @@ def _outline_plan_blocks(
     return planner.plan_next(
         **common,
         num_chapters=novel["num_chapters"],
+        is_fanfic=bool(novel.get("is_fanfic")),
     )
 
 
@@ -784,6 +853,7 @@ def _load_lore(novel_id: int) -> list[dict]:
 def _persist_blueprint_node(novel_id: int, node: str, updates: dict) -> None:
     field_map = {
         "expand_story": "full_story",
+        "init_compass": "full_story",  # 弱指南针摘要写入 full_story 供旧 UI 展示
         "core_seed": "core_seed",
         "character_dynamics": "character_dynamics",
         "world_building": "world_building",
@@ -792,7 +862,12 @@ def _persist_blueprint_node(novel_id: int, node: str, updates: dict) -> None:
     }
     with db_session() as session:
         novel = session.get(Novel, novel_id)
-        if node in field_map:
+        if node == "init_compass":
+            if updates.get("story_compass"):
+                novel.story_compass = updates["story_compass"]
+            if "full_story" in updates:
+                novel.full_story = updates["full_story"]
+        elif node in field_map:
             setattr(novel, field_map[node], updates[field_map[node]
                     if node != "init_character_state" else "character_state"])
         elif node == "initial_outlines":
@@ -811,37 +886,61 @@ def _persist_blueprint_node(novel_id: int, node: str, updates: dict) -> None:
 
 
 @router.post("/{novel_id}/blueprint")
-def generate_blueprint(novel_id: int):
-    """运行蓝图流水线：核心种子→角色→世界观→情节→状态表→首批细纲。"""
+async def generate_blueprint(novel_id: int):
+    """运行蓝图：种子→角色→世界→第1弧→指南针→状态表→首批细纲。"""
     novel = _load_novel(novel_id)
     if not novel["premise"]:
         raise HTTPException(400, "请先填写故事方向（premise）")
 
-    def gen() -> Iterator[str]:
-        yield _sse("steps", {"steps": [
-            {"id": k, "label": v} for k, v in BLUEPRINT_STEPS.items()]})
+    steps = [{"id": k, "label": v} for k, v in BLUEPRINT_STEPS.items()]
+    state = {
+        "premise": novel["premise"], "genre": novel["genre"],
+        "num_chapters": novel["num_chapters"],
+        "words_per_chapter": novel["words_per_chapter"],
+        "is_fanfic": bool(novel.get("is_fanfic")),
+        "story_compass": novel.get("story_compass") or {},
+        "outline_window": int(app_config().get("outline_window", 3)),
+        **_novel_guide_kwargs(novel),
+    }
+
+    def worker(emit: Callable[[str, dict], None]) -> None:
         try:
-            graph = build_blueprint_graph()
-            state = {
-                "premise": novel["premise"], "genre": novel["genre"],
-                "num_chapters": novel["num_chapters"],
-                "words_per_chapter": novel["words_per_chapter"],
-                "user_guidance": novel["user_guidance"],
-                "outline_window": int(app_config().get("outline_window", 3)),
-            }
-            for event in graph.stream(state, stream_mode="updates"):
-                for node, updates in event.items():
-                    _persist_blueprint_node(novel_id, node, updates or {})
-                    yield _sse("step_done", {
+            total = len(steps)
+            step_i = 0
+            for kind, node, updates in iter_blueprint_steps(state):
+                label = BLUEPRINT_STEPS.get(node, node)
+                if kind == "start":
+                    step_i += 1
+                    emit("step_start", {
                         "id": node,
-                        "label": BLUEPRINT_STEPS.get(node, node),
+                        "label": label,
+                        "index": step_i,
+                        "total": total,
                     })
-            yield _sse("done", {"novel_id": novel_id})
+                    emit("log", {"message": f"[{step_i}/{total}] 开始：{label}"})
+                elif kind == "done":
+                    _persist_blueprint_node(novel_id, node, updates or {})
+                    emit("step_done", {
+                        "id": node,
+                        "label": label,
+                        "index": step_i,
+                        "total": total,
+                    })
+                    emit("log", {"message": f"[{step_i}/{total}] 完成：{label}"})
+            emit("done", {"novel_id": novel_id})
         except Exception as e:  # noqa: BLE001
             logger.exception("蓝图生成失败")
-            yield _sse("error", {"message": str(e)})
+            emit("error", {"message": str(e)})
 
-    return _sse_response(gen())
+    return _sse_response(_sse_from_worker(
+        preamble=[
+            ("steps", {"steps": steps}),
+            ("log", {"message": "蓝图流水线已启动，右侧/下方会逐步显示进度；首步扩写故事通常最久"}),
+        ],
+        worker=worker,
+        heartbeat_seconds=8.0,
+        heartbeat_message="正在生成蓝图，模型调用中…",
+    ))
 
 
 # ---------------------------------------------------------------- 书籍包装
@@ -906,7 +1005,7 @@ def generate_volumes(novel_id: int):
                 core_seed=novel["core_seed"], full_story=novel["full_story"],
                 plot_architecture=novel["plot_architecture"],
                 num_chapters=novel["num_chapters"],
-                user_guidance=novel["user_guidance"],
+                **_novel_guide_kwargs(novel),
             )
             if not vol:
                 raise ValueError("Planner（首卷）未返回有效卷结构")
@@ -916,7 +1015,7 @@ def generate_volumes(novel_id: int):
                 full_story=novel["full_story"],
                 plot_architecture=novel["plot_architecture"],
                 num_chapters=novel["num_chapters"],
-                user_guidance=novel["user_guidance"],
+                **_novel_guide_kwargs(novel),
             )
             with db_session() as session:
                 session.query(Arc).filter_by(novel_id=novel_id).delete()
@@ -1083,7 +1182,8 @@ def append_volume(novel_id: int, payload: AppendVolumeRequest):
         try:
             with db_session() as session:
                 _persist_volume_rows(session, novel_id, vol_dict)
-                if vol_dict["end_chapter"] > novel["num_chapters"]:
+                if (not is_scale_open(novel["num_chapters"])
+                        and vol_dict["end_chapter"] > novel["num_chapters"]):
                     n = session.get(Novel, novel_id)
                     n.num_chapters = int(vol_dict["end_chapter"])
                 _clear_volume_proposals(session, novel_id)
@@ -1398,8 +1498,8 @@ def generate_next_outlines(novel_id: int):
     volumes = _load_volumes(novel_id)
     _guard_chapter_planning(novel_id, novel, start_no)
     last = last_volume(volumes)
-    plan_cap = int(last["end_chapter"]) if last else novel["num_chapters"]
-    end_no = min(start_no + window - 1, plan_cap, novel["num_chapters"])
+    plan_cap = int(last["end_chapter"]) if last else chapter_cap(novel["num_chapters"])
+    end_no = min(start_no + window - 1, plan_cap, chapter_cap(novel["num_chapters"]))
     if start_no > plan_cap:
         raise HTTPException(
             400,
@@ -1913,7 +2013,8 @@ def critique_chapter(novel_id: int, chapter_no: int):
                 writing_style=novel["writing_style"],
                 narrative_pov=novel["narrative_pov"],
                 words_per_chapter=novel["words_per_chapter"],
-                user_guidance=novel["user_guidance"],
+                user_guidance="",
+                **_novel_guide_kwargs(novel),
             )
             if not report:
                 raise ValueError("Reviewer 未返回有效评审报告")

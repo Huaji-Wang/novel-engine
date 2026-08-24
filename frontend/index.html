@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>novel-engine · Community</title>
-  <link rel="stylesheet" href="/static/style.css?v=20260715" />
+  <link rel="stylesheet" href="/static/style.css?v=20260820a" />
 </head>
 <body>
   <div id="app">
@@ -29,13 +29,12 @@
             <label>书名<input id="f-title" placeholder="未命名小说" /></label>
             <label>故事方向 / 创意 *<textarea id="f-premise" rows="4"
               placeholder="例如：一个能听见建筑物说话的拆迁评估员，发现某栋老楼里藏着改变城市命运的秘密……"></textarea></label>
-            <div class="row">
-              <label>类型<input id="f-genre" placeholder="都市奇幻" /></label>
-              <label>总章数<input id="f-chapters" type="number" value="20" min="1" /></label>
-              <label>每章字数<input id="f-words" type="number" value="3000" min="300" /></label>
-            </div>
-            <label>全局写作指导（可选）<textarea id="f-guidance" rows="2"
-              placeholder="文风、视角、禁忌等要求"></textarea></label>
+            <label>每章字数（可选）<input id="f-words" type="number" value="3000" min="300" /></label>
+            <label class="row" style="align-items:center;gap:8px">
+              <input id="f-fanfic" type="checkbox" />
+              <span>同人模式（开书用同人共创模板，章契约加厚）</span>
+            </label>
+            <p class="muted" style="font-size:12px">类型、篇幅感、全局写作指导（文风/视角/禁忌）在共创里问；也可事后在蓝图页随时改。总章数默认不锁定。</p>
             <div class="actions">
               <button class="btn primary" onclick="ui.createNovel()">创建</button>
               <button class="btn" onclick="ui.hideCreateForm()">取消</button>
@@ -117,6 +116,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=20260727a"></script>
+  <script src="/static/app.js?v=20260820a"></script>
 </body>
 </html>

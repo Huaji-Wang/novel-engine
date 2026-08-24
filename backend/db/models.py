@@ -23,9 +23,19 @@ class Novel(Base):
     title: Mapped[str] = mapped_column(String(200), default="未命名小说")
     premise: Mapped[str] = mapped_column(Text, default="")          # 用户原始方向
     genre: Mapped[str] = mapped_column(String(100), default="")
-    num_chapters: Mapped[int] = mapped_column(Integer, default=20)
+    num_chapters: Mapped[int] = mapped_column(Integer, default=0)  # 0=规模未锁定；>0=软估计
     words_per_chapter: Mapped[int] = mapped_column(Integer, default=3000)
-    user_guidance: Mapped[str] = mapped_column(Text, default="")    # 全局写作指导
+    user_guidance: Mapped[str] = mapped_column(Text, default="")  # 已废弃；保留列兼容旧库
+    # 作者全局写作指导（与 meta 的 writing_style / narrative_pov 分离）
+    guide_style: Mapped[str] = mapped_column(Text, default="")
+    guide_pov: Mapped[str] = mapped_column(Text, default="")
+    guide_taboos: Mapped[str] = mapped_column(Text, default="")
+    # 同人 / 开书共创（Integer 以便 SQLite 自动 DDL 识别为 INT）
+    is_fanfic: Mapped[int] = mapped_column(Integer, default=0)
+    cocreate_draft: Mapped[str] = mapped_column(Text, default="")
+    cocreate_messages: Mapped[list] = mapped_column(JSON, default=list)
+    cocreate_ready: Mapped[int] = mapped_column(Integer, default=0)
+    cocreate_locks: Mapped[dict] = mapped_column(JSON, default=dict)  # 同人字段锁等
 
     # 书籍包装（PlannerAgent.generate_meta；writing_style/narrative_pov 约束 Writer）
     subtitle: Mapped[str] = mapped_column(String(200), default="")

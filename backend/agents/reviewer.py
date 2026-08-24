@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from backend.context.assembler import append_reference_block, reviewer_references
 from backend.llm.client import LLMClient
+from backend.planning.guidance import prompt_guide_fields
 from backend.prompts import definitions as P
 from backend.prompts.anti_ai import prompt_kwargs
 
@@ -43,7 +44,9 @@ class ReviewerAgent:
                        chapter_outline: str, character_state: str,
                        world_building: str, genre: str,
                        writing_style: str, narrative_pov: str,
-                       words_per_chapter: int, user_guidance: str) -> dict:
+                       words_per_chapter: int, user_guidance: str = "",
+                       guide_style: str = "", guide_pov: str = "",
+                       guide_taboos: str = "", cocreate_context: str = "") -> dict:
         """原 CriticAgent.review_chapter"""
         prompt = append_reference_block(
             P.CRITIQUE_PROMPT.format(
@@ -57,7 +60,12 @@ class ReviewerAgent:
                 narrative_pov=narrative_pov or "（不限）",
                 words_per_chapter=words_per_chapter,
                 actual_words=len(chapter_text),
-                user_guidance=user_guidance or "无",
+                **prompt_guide_fields(
+                    guide_style=guide_style,
+                    guide_pov=guide_pov,
+                    guide_taboos=guide_taboos,
+                    cocreate_context=cocreate_context or user_guidance,
+                ),
                 **prompt_kwargs(include_writer_extra=False),
             ),
             reviewer_references(),

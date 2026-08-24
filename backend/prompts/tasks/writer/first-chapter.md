@@ -2,6 +2,8 @@
 本章细纲：
 {chapter_outline}
 
+{chapter_contract}
+
 参考文档：
 - 核心种子：{core_seed}
 - 世界观：
@@ -64,4 +66,18 @@
 - 不使用分章节小标题；
 - 不要使用markdown格式。
 
-额外指导(可能未指定)：{user_guidance}
+额外指导：
+【开书共创指令】
+{cocreate_context}
+
+【全局写作指导·文风语气】
+{guide_style}
+
+【全局写作指导·视角人称】
+{guide_pov}
+
+【全局写作指导·禁忌与硬要求】
+{guide_taboos}
+
+【本章额外要求】
+{chapter_extra}

@@ -6,8 +6,19 @@
 {full_story}
 - 三幕式情节架构：
 {plot_architecture}
-- 目标规模参考：全书约 {num_chapters} 章（软上限）
-- 内容指导：{user_guidance}
+- 目标规模参考：{scale_label}（软上限，0/未锁定则勿写死全书末章）
+- 内容指导：
+【开书共创指令】
+{cocreate_context}
+
+【全局写作指导·文风语气】
+{guide_style}
+
+【全局写作指导·视角人称】
+{guide_pov}
+
+【全局写作指导·禁忌与硬要求】
+{guide_taboos}
 
 ## 卷级要求
 

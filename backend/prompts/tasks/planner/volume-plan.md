@@ -9,7 +9,17 @@
 - 三幕式情节架构：
 {plot_architecture}
 - 全书共{num_chapters}章
-- 内容指导：{user_guidance}
+- 内容指导：【开书共创指令】
+{cocreate_context}
+
+【全局写作指导·文风语气】
+{guide_style}
+
+【全局写作指导·视角人称】
+{guide_pov}
+
+【全局写作指导·禁忌与硬要求】
+{guide_taboos}
 
 划分要求：
 1. 卷数依总章数合理决定（通常每卷10-30章；总章数少于15章时可只分2卷）

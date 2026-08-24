@@ -6,7 +6,20 @@
 {previous_chapter_excerpt}
 
 └── 用户指导：
-{user_guidance}
+【开书共创指令】
+{cocreate_context}
+
+【全局写作指导·文风语气】
+{guide_style}
+
+【全局写作指导·视角人称】
+{guide_pov}
+
+【全局写作指导·禁忌与硬要求】
+{guide_taboos}
+
+【本章额外要求】
+{chapter_extra}
 
 └── 角色状态：
 {character_state}
@@ -36,6 +49,9 @@
 第{chapter_no}章《{chapter_title}》
 本章细纲：
 {chapter_outline}
+
+{chapter_contract}
+
 字数要求：{words_per_chapter}字
 
 下一章细纲（用于伏笔衔接，若为空可忽略）：
@@ -63,7 +79,7 @@
 依据前面所有设定，开始完成第 {chapter_no} 章的正文，
 内容生成严格遵循：
 - 用户指导
-- 本章细纲
+- 本章细纲与本章契约（必做必须落地，禁做不得触碰）
 - 无逻辑漏洞
 确保章节内容与前文摘要、前章结尾段衔接流畅，并为下一章留出自然的承接空间。
 

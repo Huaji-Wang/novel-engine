@@ -2,6 +2,7 @@
 
 from backend.agents.chapter_planner import ChapterPlannerAgent
 from backend.agents.character import CharacterAgent
+from backend.agents.cocreate import CocreateAgent
 from backend.agents.editor import EditorAgent
 from backend.agents.impact import ImpactAgent
 from backend.agents.memory import MemoryAgent, MemoryService
@@ -29,11 +30,13 @@ LLM_AGENT_KEYS = (
     "lore",
     "foreshadow",
     "impact",
+    "cocreate",
 )
 
 __all__ = [
     "ChapterPlannerAgent",
     "CharacterAgent",
+    "CocreateAgent",
     "EditorAgent",
     "ImpactAgent",
     "MemoryAgent",

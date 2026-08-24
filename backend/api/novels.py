@@ -30,18 +30,21 @@ from backend.db.models import (
     RevisionLog,
     Volume,
 )
+from backend.db.session import db_session
 from backend.pending.service import count_pending
 
 router = APIRouter(prefix="/api/novels", tags=["novels"])
 
 EDITABLE_FIELDS = {
-    "title", "premise", "genre", "user_guidance",
+    "title", "premise", "genre",
+    "guide_style", "guide_pov", "guide_taboos",
     "subtitle", "introduction", "book_summary",
     "writing_style", "narrative_pov", "era_background",
     "full_story", "core_seed", "character_dynamics", "world_building",
     "plot_architecture", "global_summary", "character_state",
     "style_guide",
 }
+INT_EDITABLE_FIELDS = {"num_chapters", "words_per_chapter"}
 
 
 def _novel_or_404(session, novel_id: int) -> Novel:
@@ -59,7 +62,14 @@ def novel_detail(novel: Novel) -> dict:
         "genre": novel.genre,
         "num_chapters": novel.num_chapters,
         "words_per_chapter": novel.words_per_chapter,
-        "user_guidance": novel.user_guidance,
+        "guide_style": getattr(novel, "guide_style", "") or "",
+        "guide_pov": getattr(novel, "guide_pov", "") or "",
+        "guide_taboos": getattr(novel, "guide_taboos", "") or "",
+        "is_fanfic": bool(getattr(novel, "is_fanfic", 0)),
+        "cocreate_draft": getattr(novel, "cocreate_draft", "") or "",
+        "cocreate_messages": list(getattr(novel, "cocreate_messages", None) or []),
+        "cocreate_ready": bool(getattr(novel, "cocreate_ready", 0)),
+        "cocreate_locks": dict(getattr(novel, "cocreate_locks", None) or {}),
         "subtitle": novel.subtitle,
         "introduction": novel.introduction,
         "book_summary": novel.book_summary,
@@ -123,7 +133,9 @@ def novel_detail(novel: Novel) -> dict:
 @router.post("")
 def create_novel(payload: NovelCreate):
     with db_session() as session:
-        novel = Novel(**payload.model_dump())
+        data = payload.model_dump()
+        data["is_fanfic"] = 1 if data.pop("is_fanfic", False) else 0
+        novel = Novel(**data)
         session.add(novel)
         session.flush()
         return {"id": novel.id}
@@ -137,6 +149,7 @@ def list_novels():
             {
                 "id": n.id, "title": n.title, "genre": n.genre,
                 "num_chapters": n.num_chapters,
+                "is_fanfic": bool(getattr(n, "is_fanfic", 0)),
                 "has_blueprint": bool(n.plot_architecture),
                 "chapters_done": len(n.chapters),
             }
@@ -240,17 +253,33 @@ def delete_novel(novel_id: int):
 
 @router.put("/{novel_id}/field")
 def edit_field(novel_id: int, payload: FieldEdit):
-    if payload.field not in EDITABLE_FIELDS:
+    if payload.field not in EDITABLE_FIELDS and payload.field not in INT_EDITABLE_FIELDS:
         raise HTTPException(400, f"字段不可编辑: {payload.field}")
     with db_session() as session:
         novel = _novel_or_404(session, novel_id)
         old = getattr(novel, payload.field)
-        setattr(novel, payload.field, payload.content)
+        if payload.field in INT_EDITABLE_FIELDS:
+            raw = (payload.content or "").strip()
+            try:
+                value = int(raw) if raw else 0
+            except ValueError as exc:
+                raise HTTPException(400, f"{payload.field} 须为整数") from exc
+            if payload.field == "num_chapters" and not (0 <= value <= 2000):
+                raise HTTPException(400, "num_chapters 须在 0～2000（0=未锁定）")
+            if payload.field == "words_per_chapter" and not (300 <= value <= 20000):
+                raise HTTPException(400, "words_per_chapter 须在 300～20000")
+            setattr(novel, payload.field, value)
+            old_s = str(old if old is not None else "")
+            new_s = str(value)
+        else:
+            setattr(novel, payload.field, payload.content)
+            old_s = old or ""
+            new_s = payload.content or ""
         session.add(RevisionLog(
             novel_id=novel_id, target_type=payload.field,
-            target_key=payload.field, instruction="", old_content=old or "",
+            target_key=payload.field, instruction="", old_content=old_s,
         ))
-        return {"ok": True}
+        return {"ok": True, "field": payload.field, "content": new_s}
 
 
 @router.put("/{novel_id}/outlines/{chapter_no}")

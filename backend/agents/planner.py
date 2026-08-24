@@ -4,9 +4,19 @@ from __future__ import annotations
 
 from backend.context.assembler import append_reference_block, arc_planner_references, planner_references
 from backend.llm.client import LLMClient
+from backend.planning.guidance import chapter_cap, prompt_guide_fields, scale_label
 from backend.prompts import definitions as P
 
 NARRATIVE_POV_VALUES = {"第一人称", "第三人称有限视角", "全知视角"}
+
+
+def _guides(**kwargs) -> dict[str, str]:
+    return prompt_guide_fields(
+        guide_style=kwargs.get("guide_style", ""),
+        guide_pov=kwargs.get("guide_pov", ""),
+        guide_taboos=kwargs.get("guide_taboos", ""),
+        cocreate_context=kwargs.get("cocreate_context", ""),
+    )
 
 
 class PlannerAgent:
@@ -16,38 +26,75 @@ class PlannerAgent:
         self._volume_llm = LLMClient("volume_planner")
 
     def expand_story(self, premise: str, genre: str, num_chapters: int,
-                     words_per_chapter: int, user_guidance: str) -> str:
+                     words_per_chapter: int, *,
+                     cocreate_context: str = "", guide_style: str = "",
+                     guide_pov: str = "", guide_taboos: str = "",
+                     user_guidance: str = "") -> str:
+        gf = _guides(
+            cocreate_context=cocreate_context or user_guidance,
+            guide_style=guide_style, guide_pov=guide_pov, guide_taboos=guide_taboos,
+        )
         prompt = append_reference_block(
             P.EXPAND_STORY_PROMPT.format(
                 premise=premise, genre=genre, num_chapters=num_chapters,
-                words_per_chapter=words_per_chapter, user_guidance=user_guidance or "无",
+                words_per_chapter=words_per_chapter,
+                scale_label=scale_label(num_chapters),
+                **gf,
             ),
             planner_references(),
         )
         return self.llm.invoke(prompt)
 
     def core_seed(self, premise: str, genre: str, num_chapters: int,
-                  words_per_chapter: int, user_guidance: str,
-                  full_story: str = "") -> str:
+                  words_per_chapter: int, *,
+                  cocreate_context: str = "", guide_style: str = "",
+                  guide_pov: str = "", guide_taboos: str = "",
+                  user_guidance: str = "",
+                  full_story: str = "", compass_context: str = "") -> str:
+        gf = _guides(
+            cocreate_context=cocreate_context or user_guidance,
+            guide_style=guide_style, guide_pov=guide_pov, guide_taboos=guide_taboos,
+        )
         return self.llm.invoke(P.CORE_SEED_PROMPT.format(
             premise=premise, genre=genre, num_chapters=num_chapters,
-            words_per_chapter=words_per_chapter, user_guidance=user_guidance or "无",
-            full_story=full_story or "（无）",
+            words_per_chapter=words_per_chapter,
+            scale_label=scale_label(num_chapters),
+            compass_context=compass_context or full_story or "（无）",
+            **gf,
         ))
 
-    def world_building(self, core_seed: str, user_guidance: str) -> str:
+    def world_building(self, core_seed: str, *,
+                       cocreate_context: str = "", guide_style: str = "",
+                       guide_pov: str = "", guide_taboos: str = "",
+                       user_guidance: str = "") -> str:
+        gf = _guides(
+            cocreate_context=cocreate_context or user_guidance,
+            guide_style=guide_style, guide_pov=guide_pov, guide_taboos=guide_taboos,
+        )
         return self.llm.invoke(P.WORLD_BUILDING_PROMPT.format(
-            core_seed=core_seed, user_guidance=user_guidance or "无",
+            core_seed=core_seed, **gf,
         ))
 
     def plot_architecture(self, core_seed: str, character_dynamics: str,
-                          world_building: str, user_guidance: str,
-                          full_story: str = "") -> str:
+                          world_building: str, *,
+                          cocreate_context: str = "", guide_style: str = "",
+                          guide_pov: str = "", guide_taboos: str = "",
+                          user_guidance: str = "",
+                          full_story: str = "", compass_context: str = "",
+                          num_chapters: int = 0, words_per_chapter: int = 3000) -> str:
+        gf = _guides(
+            cocreate_context=cocreate_context or user_guidance,
+            guide_style=guide_style, guide_pov=guide_pov, guide_taboos=guide_taboos,
+        )
         prompt = append_reference_block(
             P.PLOT_ARCHITECTURE_PROMPT.format(
                 core_seed=core_seed, character_dynamics=character_dynamics,
-                world_building=world_building, user_guidance=user_guidance or "无",
-                full_story=full_story or "（无）",
+                world_building=world_building,
+                compass_context=compass_context or full_story or "（无）",
+                num_chapters=num_chapters,
+                words_per_chapter=words_per_chapter,
+                scale_label=scale_label(num_chapters),
+                **gf,
             ),
             planner_references(),
         )
@@ -101,15 +148,23 @@ class PlannerAgent:
         }
 
     def plan_initial_volume(self, *, core_seed: str, full_story: str, plot_architecture: str,
-                            num_chapters: int, user_guidance: str) -> dict | None:
+                            num_chapters: int,
+                            cocreate_context: str = "", guide_style: str = "",
+                            guide_pov: str = "", guide_taboos: str = "",
+                            user_guidance: str = "") -> dict | None:
         """滚动分卷：仅规划第 1 卷。"""
+        gf = _guides(
+            cocreate_context=cocreate_context or user_guidance,
+            guide_style=guide_style, guide_pov=guide_pov, guide_taboos=guide_taboos,
+        )
         result = self._volume_llm.invoke_json(append_reference_block(
             P.INITIAL_VOLUME_PLAN_PROMPT.format(
                 core_seed=core_seed,
                 full_story=full_story or "（无）",
                 plot_architecture=plot_architecture,
                 num_chapters=num_chapters,
-                user_guidance=user_guidance or "无",
+                scale_label=scale_label(num_chapters),
+                **gf,
             ),
             arc_planner_references(),
         ))
@@ -123,16 +178,22 @@ class PlannerAgent:
         vol["volume_no"] = 1
         vol["start_chapter"] = max(1, vol["start_chapter"] or 1)
         if vol["end_chapter"] < vol["start_chapter"]:
-            vol["end_chapter"] = min(num_chapters, vol["start_chapter"] + 11)
+            vol["end_chapter"] = min(chapter_cap(num_chapters), vol["start_chapter"] + 11)
         return vol
 
     def plan_volumes(self, *, core_seed: str, full_story: str, plot_architecture: str,
-                     num_chapters: int, user_guidance: str) -> list[dict]:
+                     num_chapters: int,
+                     cocreate_context: str = "", guide_style: str = "",
+                     guide_pov: str = "", guide_taboos: str = "",
+                     user_guidance: str = "") -> list[dict]:
         """兼容旧接口：等价于 plan_initial_volume 返回单卷列表。"""
         vol = self.plan_initial_volume(
             core_seed=core_seed, full_story=full_story,
             plot_architecture=plot_architecture,
-            num_chapters=num_chapters, user_guidance=user_guidance,
+            num_chapters=num_chapters,
+            cocreate_context=cocreate_context, guide_style=guide_style,
+            guide_pov=guide_pov, guide_taboos=guide_taboos,
+            user_guidance=user_guidance,
         )
         return [vol] if vol else []
 
@@ -226,13 +287,24 @@ class PlannerAgent:
         return result if isinstance(result, dict) else {}
 
     def init_compass(self, *, core_seed: str, full_story: str, plot_architecture: str,
-                     num_chapters: int, user_guidance: str) -> dict:
+                     num_chapters: int,
+                     cocreate_context: str = "", guide_style: str = "",
+                     guide_pov: str = "", guide_taboos: str = "",
+                     user_guidance: str = "",
+                     existing_compass: dict | None = None) -> dict:
+        import json
+        gf = _guides(
+            cocreate_context=cocreate_context or user_guidance,
+            guide_style=guide_style, guide_pov=guide_pov, guide_taboos=guide_taboos,
+        )
         result = self._volume_llm.invoke_json(P.COMPASS_INIT_PROMPT.format(
-            core_seed=core_seed,
-            full_story=full_story or "（无）",
-            plot_architecture=plot_architecture,
+            core_seed=core_seed or "（无）",
+            plot_architecture=plot_architecture or full_story or "（无）",
             num_chapters=num_chapters,
-            user_guidance=user_guidance or "无",
+            scale_label=scale_label(num_chapters),
+            existing_compass=json.dumps(existing_compass or {}, ensure_ascii=False, indent=2)
+            if existing_compass else "（无）",
+            **gf,
         ))
         return result if isinstance(result, dict) else {}
 

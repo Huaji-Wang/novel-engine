@@ -9,9 +9,17 @@ class NovelCreate(BaseModel):
     title: str = "未命名小说"
     premise: str = Field(..., min_length=2, description="故事主要方向/创意")
     genre: str = ""
-    num_chapters: int = Field(20, ge=1, le=2000)
+    num_chapters: int = Field(0, ge=0, le=2000, description="0=规模未锁定；>0=软估计章数")
     words_per_chapter: int = Field(3000, ge=300, le=20000)
-    user_guidance: str = ""
+    is_fanfic: bool = False
+
+
+class CocreateChatRequest(BaseModel):
+    message: str = Field(..., min_length=1, max_length=4000)
+
+
+class CocreateFinalizeRequest(BaseModel):
+    confirm: bool = True
 
 
 class StyleLearnRequest(BaseModel):

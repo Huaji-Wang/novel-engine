@@ -170,6 +170,47 @@ pre.outline-text {
 }
 details.chapter-edit summary { font-size: 13px; margin: 10px 0 6px; }
 
+/* ============ 生成进度（主区可见） ============ */
+.live-pipeline { margin-bottom: 16px; border: 1px solid var(--accent); }
+.live-pipeline ul { list-style: none; padding: 0; margin: 8px 0 0; }
+.live-pipeline li {
+  font-size: 13px; padding: 8px 10px; margin-bottom: 6px; border-radius: 6px;
+  background: var(--bg3); color: var(--muted);
+}
+.live-pipeline li.done { color: var(--green); }
+.live-pipeline li.running { color: var(--accent); font-weight: 600; }
+.step-elapsed { font-weight: 400; }
+
+/* ============ 开书共创 ============ */
+.cocreate-panel { margin-bottom: 16px; }
+.cocreate-layout {
+  display: grid; grid-template-columns: 1.2fr 1fr; gap: 16px; margin-top: 12px;
+}
+@media (max-width: 960px) {
+  .cocreate-layout { grid-template-columns: 1fr; }
+}
+.cocreate-log {
+  max-height: 280px; overflow-y: auto; background: var(--bg3);
+  border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; font-size: 13px;
+}
+.cocreate-msg { margin-bottom: 8px; line-height: 1.5; white-space: pre-wrap; }
+.cocreate-think {
+  margin: 0 0 6px; font-size: 12px; color: var(--muted);
+  white-space: normal;
+}
+.cocreate-think summary { cursor: pointer; user-select: none; }
+.cocreate-think-body {
+  margin-top: 6px; padding: 6px 8px; border-radius: 6px;
+  background: var(--bg2); white-space: pre-wrap; line-height: 1.45;
+}
+.cocreate-suggestions { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.cocreate-draft {
+  white-space: pre-wrap; font-size: 12px; line-height: 1.55;
+  max-height: 360px; overflow-y: auto; background: var(--bg3);
+  padding: 10px; border-radius: 8px; margin: 0;
+}
+.cocreate-side h4 { margin: 0 0 8px; font-size: 13px; }
+
 /* ============ 进度面板 ============ */
 #progress-panel {
   width: 300px; min-width: 300px; background: var(--bg2);

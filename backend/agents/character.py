@@ -61,9 +61,19 @@ class CharacterAgent:
     def __init__(self):
         self.llm = LLMClient("character")
 
-    def design_dynamics(self, core_seed: str, user_guidance: str) -> str:
+    def design_dynamics(
+        self, core_seed: str, *,
+        cocreate_context: str = "", guide_style: str = "",
+        guide_pov: str = "", guide_taboos: str = "",
+        user_guidance: str = "",
+    ) -> str:
+        from backend.planning.guidance import prompt_guide_fields
+        gf = prompt_guide_fields(
+            cocreate_context=cocreate_context or user_guidance,
+            guide_style=guide_style, guide_pov=guide_pov, guide_taboos=guide_taboos,
+        )
         return self.llm.invoke(P.CHARACTER_DYNAMICS_PROMPT.format(
-            core_seed=core_seed, user_guidance=user_guidance or "无",
+            core_seed=core_seed, **gf,
         ))
 
     def extract_from_chapter(self, *, chapter_no: int, chapter_text: str,

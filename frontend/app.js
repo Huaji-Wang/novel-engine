@@ -8,6 +8,7 @@ const state = {
   expandedChapter: null,  // 片段重写后保持章节展开
   pending: [],      // 待确认提案（仅定稿后产生；确认后入正式库）
   activeJobId: null,  // 正在轮询的后台任务（写章/定稿）
+  cocreateStream: null,  // null=未知；true=思考+流式；false=整包共创（无思考 UI）
 };
 
 const segmentPick = { chapterNo: null, text: "" };
@@ -64,28 +65,100 @@ async function sse(path, body, handlers) {
 /* ================= 进度面板 ================= */
 
 const progress = {
+  _timer: null,
+  _startedAt: 0,
+  _currentStep: null,
+
   show(title) {
     document.getElementById("progress-panel").classList.remove("hidden");
     document.getElementById("progress-steps").innerHTML = "";
     const log = document.getElementById("progress-log");
     log.innerHTML = "";
+    this._startedAt = Date.now();
+    this._currentStep = null;
+    this._ensureLiveCard(title);
+    this._startTimer();
     this.log(`▶ ${title}`);
   },
+  _ensureLiveCard(title) {
+    let card = document.getElementById("live-pipeline");
+    if (!card) {
+      const host = document.getElementById("tab-content");
+      if (!host) return;
+      card = document.createElement("div");
+      card.id = "live-pipeline";
+      card.className = "card live-pipeline";
+      host.prepend(card);
+    }
+    card.classList.remove("hidden");
+    card.innerHTML = `
+      <h3>⚙️ ${title || "生成进度"}</h3>
+      <p class="muted" id="live-pipeline-status">已启动，等待步骤清单…</p>
+      <p class="muted" id="live-pipeline-elapsed">已用时 0 秒</p>
+      <ul id="live-pipeline-steps"></ul>`;
+  },
+  _startTimer() {
+    if (this._timer) clearInterval(this._timer);
+    this._timer = setInterval(() => {
+      const sec = Math.floor((Date.now() - this._startedAt) / 1000);
+      const el = document.getElementById("live-pipeline-elapsed");
+      if (el) el.textContent = `已用时 ${sec} 秒` + (this._currentStep ? ` · 当前：${this._currentStep}` : "");
+      const running = document.querySelectorAll("#progress-steps li.running, #live-pipeline-steps li.running");
+      running.forEach(li => {
+        const base = li.dataset.label || li.textContent.replace(/^\S+\s/, "").replace(/\s·.*$/, "");
+        li.dataset.label = li.dataset.label || base;
+        const tip = li.querySelector(".step-elapsed") || document.createElement("span");
+        tip.className = "step-elapsed muted";
+        tip.textContent = ` · ${sec}s`;
+        if (!tip.parentNode) li.appendChild(tip);
+      });
+    }, 1000);
+  },
+  _stopTimer() {
+    if (this._timer) { clearInterval(this._timer); this._timer = null; }
+  },
   setSteps(steps) {
+    const html = steps.map(s =>
+      `<li id="step-${s.id}" data-label="${s.label}">${s.label}</li>`).join("");
     const ul = document.getElementById("progress-steps");
-    ul.innerHTML = steps.map(s =>
-      `<li id="step-${s.id}">${s.label}</li>`).join("");
-    if (steps.length) ul.children[0].classList.add("running");
+    ul.innerHTML = html;
+    const live = document.getElementById("live-pipeline-steps");
+    if (live) {
+      live.innerHTML = steps.map(s =>
+        `<li id="live-step-${s.id}" data-label="${s.label}">${s.label}</li>`).join("");
+    }
+    const status = document.getElementById("live-pipeline-status");
+    if (status) status.textContent = `共 ${steps.length} 步，等待开始…`;
+  },
+  stepStart(id, label, index, total) {
+    this._currentStep = label || id;
+    const mark = (li) => {
+      if (!li) return;
+      document.querySelectorAll(`#${li.parentElement.id} li.running`).forEach(x => x.classList.remove("running"));
+      li.classList.remove("done");
+      li.classList.add("running");
+      li.dataset.label = label || li.dataset.label || id;
+      li.innerHTML = `… ${label || li.dataset.label}`;
+    };
+    mark(document.getElementById(`step-${id}`));
+    mark(document.getElementById(`live-step-${id}`));
+    const status = document.getElementById("live-pipeline-status");
+    if (status) {
+      status.textContent = index && total
+        ? `正在进行 ${index}/${total}：${label || id}`
+        : `正在进行：${label || id}`;
+    }
+    this.log(`… ${index && total ? `[${index}/${total}] ` : ""}${label || id}`);
   },
   stepDone(id, label) {
-    const li = document.getElementById(`step-${id}`);
-    if (li) {
+    const finish = (li) => {
+      if (!li) return;
       li.classList.remove("running");
       li.classList.add("done");
-      li.innerHTML = `✓ ${label || li.textContent}`;
-      const next = li.nextElementSibling;
-      if (next && !next.classList.contains("done")) next.classList.add("running");
-    }
+      li.innerHTML = `✓ ${label || li.dataset.label || id}`;
+    };
+    finish(document.getElementById(`step-${id}`));
+    finish(document.getElementById(`live-step-${id}`));
     this.log(`✓ ${label || id}`);
   },
   log(msg, isErr = false) {
@@ -95,6 +168,8 @@ const progress = {
     if (isErr) div.className = "err";
     log.appendChild(div);
     log.scrollTop = log.scrollHeight;
+    const status = document.getElementById("live-pipeline-status");
+    if (status && !isErr && msg && !msg.startsWith("▶")) status.textContent = msg;
   },
   actionLine(html) {
     const log = document.getElementById("progress-log");
@@ -107,6 +182,12 @@ const progress = {
     const btn = document.getElementById("job-cancel");
     if (btn) btn.classList.toggle("hidden", !show);
   },
+  finish(ok) {
+    this._stopTimer();
+    this._currentStep = null;
+    const status = document.getElementById("live-pipeline-status");
+    if (status) status.textContent = ok ? "✅ 全部完成" : "已结束（见右侧日志）";
+  },
 };
 
 /* 通用：跑一个 SSE 任务并在完成后刷新当前小说 */
@@ -114,10 +195,12 @@ async function runTask(title, path, body) {
   if (state.busy) { alert("已有任务进行中，请等待完成"); return false; }
   state.busy = true;
   progress.show(title);
+  progress.log("已发送请求，等待服务端推送步骤…");
   let ok = false;
   try {
     await sse(path, body, {
       steps: d => progress.setSteps(d.steps || []),
+      step_start: d => progress.stepStart(d.id, d.label, d.index, d.total),
       step_done: d => {
         progress.stepDone(d.id, d.label);
         if (d.payload?.impacted?.length) logImpact(d.payload.impacted);
@@ -129,6 +212,7 @@ async function runTask(title, path, body) {
   } catch (e) {
     progress.log(`❌ ${e.message}`, true);
   } finally {
+    progress.finish(ok);
     state.busy = false;
   }
   if (state.novel) await ui.openNovel(state.novel.id, true);
@@ -143,13 +227,14 @@ function renderJobEvent(entry) {
   const d = entry.data || {};
   switch (entry.event) {
     case "steps": progress.setSteps(d.steps || []); break;
+    case "step_start": progress.stepStart(d.id, d.label, d.index, d.total); break;
     case "step_done":
       progress.stepDone(d.id, d.label);
       if (d.payload?.impacted?.length) logImpact(d.payload.impacted);
       break;
     case "log": progress.log(d.message || ""); break;
-    case "done": progress.log("✅ 完成"); break;
-    case "error": progress.log(`❌ ${d.message || "未知错误"}`, true); break;
+    case "done": progress.log("✅ 完成"); progress.finish(true); break;
+    case "error": progress.log(`❌ ${d.message || "未知错误"}`, true); progress.finish(false); break;
   }
 }
 
@@ -218,7 +303,7 @@ const ui = {
     ul.innerHTML = state.novels.map(n => `
       <li onclick="ui.openNovel(${n.id})" class="${state.novel?.id === n.id ? "active" : ""}">
         <div class="nl-title">${esc(n.title)}</div>
-        <div class="nl-sub">${esc(n.genre || "未分类")} · ${n.chapters_done}/${n.num_chapters}章
+        <div class="nl-sub">${esc(n.genre || "未分类")} · 已写${n.chapters_done}章${n.num_chapters > 0 ? ` · 约${n.num_chapters}` : " · 规模开放"}
           ${n.has_blueprint ? "· 已有蓝图" : ""}</div>
       </li>`).join("");
   },
@@ -240,10 +325,9 @@ const ui = {
     const payload = {
       title: document.getElementById("f-title").value.trim() || "未命名小说",
       premise,
-      genre: document.getElementById("f-genre").value.trim(),
-      num_chapters: parseInt(document.getElementById("f-chapters").value) || 20,
+      num_chapters: 0,
       words_per_chapter: parseInt(document.getElementById("f-words").value) || 3000,
-      user_guidance: document.getElementById("f-guidance").value.trim(),
+      is_fanfic: !!document.getElementById("f-fanfic")?.checked,
     };
     const { id } = await api("POST", "/api/novels", payload);
     await this.refreshList();
@@ -258,8 +342,11 @@ const ui = {
     document.getElementById("wb-title").textContent = state.novel.title;
     const pendingHint = state.novel.pending_count
       ? ` · 待确认 ${state.novel.pending_count}` : "";
+    const scaleMeta = (state.novel.num_chapters > 0)
+      ? `软估计约${state.novel.num_chapters}章`
+      : "规模未锁定";
     document.getElementById("wb-meta").textContent =
-      `${state.novel.genre || "未分类"} · 共${state.novel.num_chapters}章 · 每章约${state.novel.words_per_chapter}字${pendingHint}`;
+      `${state.novel.genre || "未分类"} · ${scaleMeta} · 每章约${state.novel.words_per_chapter}字${pendingHint}`;
     document.querySelectorAll(".tab").forEach(t =>
       t.classList.toggle("active", t.dataset.tab === state.tab));
     try {
@@ -268,7 +355,7 @@ const ui = {
     } catch {
       state.pending = [];
     }
-    this.renderTab();
+    this.ensureCocreateCap().finally(() => this.renderTab());
     if (state.expandedChapter) {
       const body = document.getElementById(`chapter-body-${state.expandedChapter}`);
       if (body) body.classList.remove("hidden");
@@ -319,17 +406,19 @@ const ui = {
   renderBlueprint(n) {
     const styleCard = renderStyleGuideCard(n);
     if (!n.core_seed) {
-      return `<div class="empty-hint">
-        <p>还没有蓝图。点击下方按钮，由 Planner / Character / ChapterPlanner 协作生成：</p>
-        <p class="muted" style="margin:8px 0">压缩故事 → 核心种子 → 角色动力学 → 世界观 → 三幕情节 → 开篇状态表 → 首批细纲（角色卡/阵营随定稿增量建档）</p>
+      return renderCocreatePanel(n) + renderGuidesCard(n) + renderScaleCard(n) + `<div class="empty-hint">
+        <p>共创确认后（或跳过共创），生成蓝图：</p>
+        <p class="muted" style="margin:8px 0">核心种子 → 角色（锁共创） → 世界观 → 第1弧架构 → 弱指南针 → 状态表 → 首批细纲</p>
         <button class="btn primary" onclick="actions.generateBlueprint()">🚀 生成蓝图</button>
       </div>` + styleCard;
     }
     return [
-      editableBlock("full_story", "整本书压缩故事（全书剧情与结局锚点）", n.full_story),
+      renderGuidesCard(n),
+      renderScaleCard(n),
+      editableBlock("full_story", "故事倾向摘要（弱指南针；可改，非全书散文）", n.full_story),
       editableBlock("core_seed", "核心种子", n.core_seed),
       editableBlock("world_building", "世界观", n.world_building),
-      editableBlock("plot_architecture", "三幕式情节架构", n.plot_architecture),
+      editableBlock("plot_architecture", "第1弧架构（近处节拍，非全书三幕）", n.plot_architecture),
       editableBlock("character_dynamics", "角色动力学", n.character_dynamics),
       renderMetaCard(n),
       renderCompassCard(n),
@@ -337,7 +426,7 @@ const ui = {
       renderStyleGuideCard(n),
       `<div class="card"><h3>重新生成</h3>
         <p class="muted">将覆盖以上全部蓝图内容（角色卡与细纲一并重建）</p>
-        <div class="actions"><button class="btn" onclick="actions.generateBlueprint()">重新生成蓝图</button></div>
+        <div class="actions"><button class="btn primary" onclick="actions.generateBlueprint()">重新生成蓝图</button></div>
       </div>`,
     ].join("");
   },
@@ -548,6 +637,16 @@ const ui = {
     await this.openNovel(state.novel.id, true);
   },
 
+  async saveScaleFields() {
+    const genre = document.getElementById("field-genre")?.value ?? "";
+    const num = document.getElementById("field-num_chapters")?.value ?? "0";
+    const words = document.getElementById("field-words_per_chapter")?.value ?? "3000";
+    await api("PUT", `/api/novels/${state.novel.id}/field`, { field: "genre", content: genre });
+    await api("PUT", `/api/novels/${state.novel.id}/field`, { field: "num_chapters", content: String(num) });
+    await api("PUT", `/api/novels/${state.novel.id}/field`, { field: "words_per_chapter", content: String(words) });
+    await this.openNovel(state.novel.id, true);
+  },
+
   editOutline(no) {
     document.getElementById(`outline-view-${no}`).classList.add("hidden");
     document.getElementById(`outline-edit-${no}`).classList.remove("hidden");
@@ -656,8 +755,8 @@ const ui = {
   /* ---- AI 修订弹窗 ---- */
   openRevise(targetType, chapterNo = null, fieldLabel = "") {
     const labels = {
-      full_story: "整本书压缩故事", core_seed: "核心种子", world_building: "世界观",
-      plot_architecture: "情节架构", character_dynamics: "角色动力学",
+      full_story: "故事倾向摘要", core_seed: "核心种子", world_building: "世界观",
+      plot_architecture: "第1弧架构", character_dynamics: "角色动力学",
       chapter_outline: `第${chapterNo}章细纲`, chapter: `第${chapterNo}章正文`,
     };
     document.getElementById("modal-title").textContent = `AI 修订：${fieldLabel || labels[targetType] || targetType}`;
@@ -757,7 +856,103 @@ const actions = {
     progress.show(`重试后台任务 #${jobId}（从断点继续）`);
     await pollJob(jobId);
   },
+  async ensureCocreateCap() {
+    if (!state.novel || state.cocreateStream != null) return;
+    try {
+      const d = await api("GET", `/api/novels/${state.novel.id}/cocreate/capabilities`);
+      state.cocreateStream = !!d.stream;
+    } catch {
+      state.cocreateStream = false;
+    }
+  },
+  async cocreateSend() {
+    if (!state.novel) return;
+    const input = document.getElementById("cocreate-input");
+    const msg = (input?.value || "").trim();
+    if (!msg) return;
+    if (state.busy) { alert("已有任务进行中"); return; }
+    state.busy = true;
+    try {
+      const looksFanfic = /同人|原作|战锤|哈利|火影|漫威|DC|原神|穿越进/.test(
+        msg + (state.novel.premise || "") + (state.novel.genre || ""));
+      if (looksFanfic && !state.novel.is_fanfic) {
+        if (confirm("这段描述像同人作品。是否切换为同人模式（更强原作约束）？")) {
+          await api("POST", `/api/novels/${state.novel.id}/cocreate/enable_fanfic`, {});
+          state.novel.is_fanfic = true;
+        }
+      }
+      await this.ensureCocreateCap();
+      if (state.cocreateStream) {
+        await this.cocreateSendStream(msg, input);
+      } else {
+        const data = await api("POST", `/api/novels/${state.novel.id}/cocreate/chat`, { message: msg });
+        state.novel.cocreate_messages = data.messages || [];
+        state.novel.cocreate_draft = data.draft || "";
+        state.novel.cocreate_ready = !!data.ready;
+        if (input) input.value = "";
+        ui.renderTab();
+      }
+    } catch (e) {
+      alert(e.message);
+      ui.renderTab();
+    } finally {
+      state.busy = false;
+    }
+  },
+  async cocreateSendStream(msg, input) {
+    if (input) input.value = "";
+    beginCocreateLive(msg);
+    let thinking = "";
+    let reply = "";
+    await sse(`/api/novels/${state.novel.id}/cocreate/chat_stream`, { message: msg }, {
+      thinking_start() { setCocreateThinkSummary("思考中…"); },
+      thinking(d) {
+        thinking += d.delta || "";
+        setCocreateThinkBody(thinking);
+      },
+      reply_start() { setCocreateThinkSummary("本轮思考"); },
+      reply(d) {
+        reply += d.delta || "";
+        setCocreateReply(reply);
+      },
+      done(data) {
+        state.novel.cocreate_messages = data.messages || [];
+        state.novel.cocreate_draft = data.draft || "";
+        state.novel.cocreate_ready = !!data.ready;
+        ui.renderTab();
+      },
+      error(d) { throw new Error(d.message || "共创流式失败"); },
+    });
+  },
+  async cocreateSuggest(text) {
+    const input = document.getElementById("cocreate-input");
+    if (input) input.value = text;
+  },
+  async cocreateFinalize() {
+    if (!state.novel) return;
+    if (state.busy) { alert("已有任务进行中"); return; }
+    if (!confirm("确认当前共创草稿？将写入创作约束，随后可生成蓝图。")) return;
+    state.busy = true;
+    try {
+      const data = await api("POST", `/api/novels/${state.novel.id}/cocreate/finalize`, { confirm: true });
+      if (data.novel) state.novel = data.novel;
+      else {
+        state.novel.cocreate_ready = true;
+        state.novel.cocreate_draft = data.cocreate_draft || state.novel.cocreate_draft;
+        state.novel.cocreate_locks = data.cocreate_locks || {};
+      }
+      ui.renderTab();
+      alert("共创已确认。可以点击「生成蓝图」。");
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      state.busy = false;
+    }
+  },
   async generateBlueprint() {
+    if (state.novel?.cocreate_draft && !state.novel.cocreate_ready) {
+      if (!confirm("共创草稿尚未点「确认」。仍直接生成蓝图？（将尽量注入当前草稿）")) return;
+    }
     await runTask("生成小说蓝图", `/api/novels/${state.novel.id}/blueprint`);
   },
   async nextOutlines() {
@@ -1072,6 +1267,99 @@ function editableBlock(field, title, content) {
   </div>`;
 }
 
+function renderCocreatePanel(n) {
+  const msgs = n.cocreate_messages || [];
+  const lastAssistant = [...msgs].reverse().find(m => m.role === "assistant");
+  const suggestions = lastAssistant?.suggestions || [];
+  const fanficBadge = n.is_fanfic
+    ? `<span class="muted">· 同人模式</span>`
+    : `<span class="muted">· 一般模式（像同人时可勾选创建，或在对话中确认切换）</span>`;
+  const chatHtml = msgs.length
+    ? msgs.map(m => {
+        const who = m.role === "user" ? "你" : "共创";
+        const think = (state.cocreateStream && m.role === "assistant" && m.thinking)
+          ? `<details class="cocreate-think"><summary>本轮思考</summary><div class="cocreate-think-body">${escapeHtml(m.thinking)}</div></details>`
+          : "";
+        return `<div class="cocreate-msg">${think}<strong>${who}</strong>：${escapeHtml(m.content || "")}</div>`;
+      }).join("")
+    : `<p class="muted">还没有对话。先说清你想写什么、不能碰什么；同人请尽早点明原作。</p>`;
+  const sugHtml = suggestions.length
+    ? `<div class="cocreate-suggestions">${suggestions.map((s, i) =>
+        `<button class="btn sm" onclick='actions.cocreateSuggest(${JSON.stringify(s)})'>${i + 1}. ${escapeHtml(s)}</button>`
+      ).join(" ")}</div>`
+    : "";
+  const draft = n.cocreate_draft
+    ? `<pre class="cocreate-draft">${escapeHtml(n.cocreate_draft)}</pre>`
+    : `<p class="muted">草稿会随对话累积更新</p>`;
+  const readyHint = n.cocreate_ready
+    ? `<p class="muted">✅ 助手认为可以开书了——请点「确认共创」再生成蓝图。</p>`
+    : "";
+  return `<div class="card cocreate-panel">
+    <h3>🧭 开书共创 ${fanficBadge}</h3>
+    <p class="muted">多轮澄清后整理创作指令；可谈类型、篇幅感、全局写作指导（文风/视角/禁忌，每块可跳过）。世界观与蓝图会跟这份草稿走。也可跳过，直接下方生成蓝图。</p>
+    <div class="cocreate-layout">
+      <div class="cocreate-chat">
+        <div class="cocreate-log">${chatHtml}</div>
+        ${sugHtml}
+        <textarea id="cocreate-input" rows="3" placeholder="例如：主角是旁观者穿越，不能公开与帝国翻脸……"></textarea>
+        <div class="actions">
+          <button class="btn primary sm" onclick="actions.cocreateSend()">发送</button>
+          <button class="btn sm" onclick="actions.cocreateFinalize()" ${n.cocreate_draft ? "" : "disabled"}>确认共创</button>
+        </div>
+        ${readyHint}
+      </div>
+      <div class="cocreate-side">
+        <h4>创作指令草稿</h4>
+        ${draft}
+      </div>
+    </div>
+  </div>`;
+}
+
+function beginCocreateLive(userMsg) {
+  const log = document.getElementById("cocreate-log");
+  if (!log) return;
+  const empty = log.querySelector("p.muted");
+  if (empty) empty.remove();
+  log.insertAdjacentHTML("beforeend",
+    `<div class="cocreate-msg"><strong>你</strong>：${escapeHtml(userMsg)}</div>
+     <div class="cocreate-msg" id="cocreate-live">
+       <details class="cocreate-think">
+         <summary id="cocreate-live-think-sum">思考中…</summary>
+         <div class="cocreate-think-body" id="cocreate-live-think-body"></div>
+       </details>
+       <strong>共创</strong>：<span id="cocreate-live-reply"></span>
+     </div>`);
+  log.scrollTop = log.scrollHeight;
+}
+
+function setCocreateThinkSummary(text) {
+  const el = document.getElementById("cocreate-live-think-sum");
+  if (el) el.textContent = text;
+}
+
+function setCocreateThinkBody(text) {
+  const el = document.getElementById("cocreate-live-think-body");
+  if (el) el.textContent = text;
+  const log = document.getElementById("cocreate-log");
+  if (log) log.scrollTop = log.scrollHeight;
+}
+
+function setCocreateReply(text) {
+  const el = document.getElementById("cocreate-live-reply");
+  if (el) el.textContent = text;
+  const log = document.getElementById("cocreate-log");
+  if (log) log.scrollTop = log.scrollHeight;
+}
+
+function escapeHtml(s) {
+  return String(s || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 function renderStyleGuideCard(n) {
   const guide = n.style_guide || "";
   const profileHint = n.style_profile_id
@@ -1290,6 +1578,49 @@ function renderForeshadowings(items) {
   return `<div class="card"><h3>伏笔台账（${items.length}条）</h3>${rows}</div>`;
 }
 
+function renderGuidesCard(n) {
+  return `<div class="card">
+    <h3>全局写作指导</h3>
+    <p class="muted" style="font-size:12px;margin-bottom:8px">与书籍包装的「创作风格/叙事视角」分离；写章时本卡优先。每块可留空（等同跳过）。改后立即作用于后续生成，不必重跑蓝图。</p>
+    <div style="margin-bottom:8px">
+      <div class="muted" style="font-size:12px;margin-bottom:2px">文风语气</div>
+      <textarea id="field-guide_style" rows="3" placeholder="例如：冷峻克制，少抒情……">${esc(n.guide_style || "")}</textarea>
+      <button class="btn sm" onclick="ui.saveField('guide_style')">保存</button>
+    </div>
+    <div style="margin-bottom:8px">
+      <div class="muted" style="font-size:12px;margin-bottom:2px">视角人称</div>
+      <textarea id="field-guide_pov" rows="2" placeholder="例如：第三人称有限，跟主角……">${esc(n.guide_pov || "")}</textarea>
+      <button class="btn sm" onclick="ui.saveField('guide_pov')">保存</button>
+    </div>
+    <div style="margin-bottom:8px">
+      <div class="muted" style="font-size:12px;margin-bottom:2px">禁忌与硬要求</div>
+      <textarea id="field-guide_taboos" rows="3" placeholder="例如：禁止开后宫；不写幼女……">${esc(n.guide_taboos || "")}</textarea>
+      <button class="btn sm" onclick="ui.saveField('guide_taboos')">保存</button>
+    </div>
+  </div>`;
+}
+
+function renderScaleCard(n) {
+  const open = !(n.num_chapters > 0);
+  return `<div class="card">
+    <h3>规模与类型</h3>
+    <p class="muted" style="font-size:12px;margin-bottom:8px">总章数默认开放；仅当作者给出软估计时填写正整数。清除为 0 即回到未锁定。</p>
+    <div class="row" style="gap:12px;align-items:flex-end;flex-wrap:wrap">
+      <label>类型
+        <input id="field-genre" value="${esc(n.genre || "")}" placeholder="都市奇幻 / 未定" style="width:160px" />
+      </label>
+      <label>软估计总章数（0=未锁定）
+        <input id="field-num_chapters" type="number" min="0" max="2000" value="${n.num_chapters || 0}" style="width:120px" />
+      </label>
+      <label>每章字数
+        <input id="field-words_per_chapter" type="number" min="300" value="${n.words_per_chapter || 3000}" style="width:120px" />
+      </label>
+      <button class="btn primary sm" onclick="ui.saveScaleFields()">保存</button>
+    </div>
+    <p class="muted" style="font-size:12px;margin-top:6px">${open ? "当前：规模未锁定" : `当前：软估计约 ${n.num_chapters} 章`}</p>
+  </div>`;
+}
+
 function renderMetaCard(n) {
   const hasMeta = n.writing_style || n.subtitle || n.introduction;
   if (!hasMeta) {
@@ -1303,8 +1634,8 @@ function renderMetaCard(n) {
   return `<div class="card"><h3>书籍包装 ${tags ? `<span class="traits" style="margin-left:8px">${tags}</span>` : ""}</h3>` +
     [
       ["subtitle", "副标题", n.subtitle],
-      ["writing_style", "创作风格（约束 Writer/Editor）", n.writing_style],
-      ["narrative_pov", "叙事视角（约束 Writer/Editor）", n.narrative_pov],
+      ["writing_style", "创作风格（书籍包装/弱补充；作者契约见上方「全局写作指导」）", n.writing_style],
+      ["narrative_pov", "叙事视角（书籍包装；作者契约见上方「全局写作指导」）", n.narrative_pov],
       ["era_background", "时代背景", n.era_background],
       ["introduction", "引言", n.introduction],
       ["book_summary", "简介", n.book_summary],

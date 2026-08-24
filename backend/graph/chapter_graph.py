@@ -79,6 +79,7 @@ def _write_kwargs(state: ChapterState) -> dict:
         "style_rules_context": state.get("style_rules_context", ""),
         "recent_cast_context": state.get("recent_cast_context", ""),
         "arc_hook_note": state.get("arc_hook_note", ""),
+        "chapter_contract": state.get("chapter_contract", ""),
     }
     return base
 
@@ -126,7 +127,12 @@ def _write(state: ChapterState) -> dict:
             plot_architecture=state["plot_architecture"],
             character_state=state.get("character_state", ""),
             words_per_chapter=state["words_per_chapter"],
-            user_guidance=state.get("user_guidance", ""),
+            user_guidance="",
+            guide_style=state.get("guide_style", ""),
+            guide_pov=state.get("guide_pov", ""),
+            guide_taboos=state.get("guide_taboos", ""),
+            cocreate_context=state.get("cocreate_context", ""),
+            chapter_extra=state.get("chapter_extra", ""),
             **kw,
         )
     else:
@@ -140,7 +146,12 @@ def _write(state: ChapterState) -> dict:
             character_state=state.get("character_state", ""),
             world_building=state["world_building"],
             words_per_chapter=state["words_per_chapter"],
-            user_guidance=state.get("user_guidance", ""),
+            user_guidance="",
+            guide_style=state.get("guide_style", ""),
+            guide_pov=state.get("guide_pov", ""),
+            guide_taboos=state.get("guide_taboos", ""),
+            cocreate_context=state.get("cocreate_context", ""),
+            chapter_extra=state.get("chapter_extra", ""),
             retrieved_context=state.get("retrieved_context", ""),
             lore_context=state.get("lore_context", ""),
             **kw,

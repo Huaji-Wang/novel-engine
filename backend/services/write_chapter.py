@@ -21,6 +21,7 @@ from backend.api.generation import (
     _load_novel,
     _load_volumes,
 )
+from backend.agents.cocreate import format_chapter_contract, format_cocreate_context
 from backend.agents.narrative_ledger import format_ledger
 from backend.agents.worldkeeper import format_lore, match_lore
 from backend.characters.cast import format_recent_cast
@@ -47,6 +48,7 @@ from backend.planning.compass import (
     format_style_rules_context,
     load_latest_character_snapshots,
 )
+from backend.planning.guidance import budget_scale, format_guides_block
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +62,7 @@ def prepare_write_state(novel_id: int, chapter_no: int, user_guidance: str = "")
     """
     novel = _load_novel(novel_id)
     _guard_chapter_planning(novel_id, novel, chapter_no)
-    profile = strategy_profile(novel["num_chapters"])
+    profile = strategy_profile(budget_scale(novel["num_chapters"], chapter_no))
     with db_session() as session:
         outline = session.query(ChapterOutline).filter_by(
             novel_id=novel_id, chapter_no=chapter_no).first()
@@ -77,7 +79,18 @@ def prepare_write_state(novel_id: int, chapter_no: int, user_guidance: str = "")
             prev_chapter.content[-int(profile["prev_excerpt_chars"]):]
             if prev_chapter else "")
 
-    guidance = "\n".join(filter(None, [novel["user_guidance"], user_guidance]))
+    guidance_kw = {
+        "guide_style": novel.get("guide_style") or "",
+        "guide_pov": novel.get("guide_pov") or "",
+        "guide_taboos": novel.get("guide_taboos") or "",
+        "cocreate_context": format_cocreate_context(
+            draft=novel.get("cocreate_draft") or "",
+            locks=novel.get("cocreate_locks") or {},
+            is_fanfic=bool(novel.get("is_fanfic")),
+        ),
+        "chapter_extra": (user_guidance or "").strip(),
+    }
+    guidance_block = format_guides_block(**guidance_kw)
 
     match_text = "\n".join([outline_title, outline_content, next_outline_content])
     lore_context = format_lore(match_lore(_load_lore(novel_id), match_text))
@@ -106,6 +119,7 @@ def prepare_write_state(novel_id: int, chapter_no: int, user_guidance: str = "")
         "chapter_no": chapter_no,
         "chapter_title": outline_title,
         "chapter_outline": outline_content,
+        "chapter_contract": format_chapter_contract(outline_content),
         "next_chapter_outline": next_outline_content,
         "core_seed": novel["core_seed"],
         "world_building": novel["world_building"],
@@ -114,7 +128,8 @@ def prepare_write_state(novel_id: int, chapter_no: int, user_guidance: str = "")
         "global_summary": novel["global_summary"],
         "previous_chapter_excerpt": prev_excerpt,
         "words_per_chapter": novel["words_per_chapter"],
-        "user_guidance": guidance,
+        "user_guidance": guidance_block,
+        **guidance_kw,
         "max_revise_rounds": int(app_config().get("max_auto_revise_rounds", 1)),
         "max_quality_rounds": int(gate.get("max_quality_rewrite_rounds", 1)),
         "foreshadowing_ledger": format_ledger(_load_ledger(novel_id)),
@@ -132,7 +147,7 @@ def prepare_write_state(novel_id: int, chapter_no: int, user_guidance: str = "")
         "pending_count": count_pending(novel_id),
     }
     state["_context_budget"] = apply_writer_budget(
-        state, num_chapters=novel["num_chapters"])
+        state, num_chapters=budget_scale(novel["num_chapters"], chapter_no))
     return state
 
 

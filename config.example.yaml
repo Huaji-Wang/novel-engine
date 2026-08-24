@@ -91,6 +91,8 @@ llm:
     # ImpactAgent
     impact:
       temperature: 0.2
+    cocreate:
+      temperature: 0.6
 
 embedding:
   base_url: "https://api.openai.com/v1"

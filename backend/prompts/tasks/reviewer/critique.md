@@ -6,7 +6,18 @@
 - 写作风格：{writing_style}
 - 叙事视角：{narrative_pov}
 - 目标字数：约{words_per_chapter}字（实际{actual_words}字）
-- 用户写作指导：{user_guidance}
+用户写作指导：
+【开书共创指令】
+{cocreate_context}
+
+【全局写作指导·文风语气】
+{guide_style}
+
+【全局写作指导·视角人称】
+{guide_pov}
+
+【全局写作指导·禁忌与硬要求】
+{guide_taboos}
 
 【本章细纲（成稿应完成细纲规定的目标）】
 {chapter_outline}

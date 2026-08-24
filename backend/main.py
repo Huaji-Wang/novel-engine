@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from backend.api import generation, jobs, novels, pending_proposals, style_profiles
+from backend.api import cocreate, generation, jobs, novels, pending_proposals, style_profiles
 from backend.db.session import init_db
 from backend.jobs.worker import start_worker, stop_worker
 
@@ -22,6 +22,7 @@ FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 
 app = FastAPI(title="多智能体小说生成引擎 (novel-engine-next)", version="0.2.0")
 app.include_router(novels.router)
+app.include_router(cocreate.router)
 app.include_router(generation.router)
 app.include_router(style_profiles.router)
 app.include_router(pending_proposals.router)

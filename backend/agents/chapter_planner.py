@@ -38,11 +38,27 @@ class ChapterPlannerAgent:
     def plan_next(self, *, core_seed: str, world_building: str, plot_architecture: str,
                   character_state: str, global_summary: str, existing_outlines: str,
                   num_chapters: int, start_no: int, end_no: int,
-                  user_guidance: str, foreshadowing_ledger: str = "",
+                  user_guidance: str = "",
+                  cocreate_context: str = "",
+                  guide_style: str = "", guide_pov: str = "", guide_taboos: str = "",
+                  foreshadowing_ledger: str = "",
                   volume_context: str = "", arc_context: str = "",
                   compass_context: str = "",
                   factions_brief: str = "",
-                  payoff_ledger: str = "") -> list[dict]:
+                  payoff_ledger: str = "",
+                  is_fanfic: bool = False) -> list[dict]:
+        if is_fanfic:
+            contract_extra = (
+                "【同人章契约加厚】每章禁做至少写 1 条防 OOC/破原作边界/提前泄底；"
+                "必做须服务同人锚点或已锁定的势力/声口约束。"
+            )
+        else:
+            contract_extra = "【章契约】必做/禁做各写短句即可；禁做无内容时写「无」。"
+        from backend.planning.guidance import prompt_guide_fields, scale_label
+        gf = prompt_guide_fields(
+            cocreate_context=cocreate_context or user_guidance,
+            guide_style=guide_style, guide_pov=guide_pov, guide_taboos=guide_taboos,
+        )
         text = self.llm.invoke(P.CHAPTER_OUTLINES_PROMPT.format(
             core_seed=core_seed,
             world_building=world_building,
@@ -57,9 +73,11 @@ class ChapterPlannerAgent:
             factions_brief=factions_brief or "（未设置阵营）",
             payoff_ledger=payoff_ledger or "（暂无爽点记录）",
             num_chapters=num_chapters,
+            scale_label=scale_label(num_chapters),
             start_no=start_no,
             end_no=end_no,
-            user_guidance=user_guidance or "无",
+            contract_extra=contract_extra,
+            **gf,
         ))
         blocks = parse_outline_blocks(text)
         # 仅保留请求范围内的章节，防止模型越界生成
@@ -76,12 +94,16 @@ class ChapterPlannerAgent:
         existing_outlines: str,
         start_no: int,
         end_no: int,
-        user_guidance: str,
         volume_no: int,
         arc_no: int,
         arc_title: str,
         arc_goal: str,
         estimated_chapters: int,
+        user_guidance: str = "",
+        cocreate_context: str = "",
+        guide_style: str = "",
+        guide_pov: str = "",
+        guide_taboos: str = "",
         foreshadowing_ledger: str = "",
         volume_context: str = "",
         arc_context: str = "",
@@ -91,9 +113,13 @@ class ChapterPlannerAgent:
         payoff_ledger: str = "",
     ) -> list[dict]:
         """展开 skeleton 弧：对齐 ainovel expand_arc 细纲（core_event / hook / scenes）。"""
+        from backend.planning.guidance import prompt_guide_fields
+        gf = prompt_guide_fields(
+            cocreate_context=cocreate_context or user_guidance,
+            guide_style=guide_style, guide_pov=guide_pov, guide_taboos=guide_taboos,
+        )
         prompt = append_reference_block(
             P.EXPAND_ARC_OUTLINES_PROMPT.format(
-                user_guidance=user_guidance or "无",
                 core_seed=core_seed,
                 world_building=world_building,
                 plot_architecture=plot_architecture,
@@ -114,6 +140,7 @@ class ChapterPlannerAgent:
                 factions_brief=factions_brief or "（未设置阵营）",
                 payoff_ledger=payoff_ledger or "（暂无爽点记录）",
                 existing_outlines=existing_outlines or "（无）",
+                **gf,
             ),
             arc_planner_references(),
         )
