@@ -1,4 +1,4 @@
-# novel-engine-next 配置示例
+# novel-engine 配置示例
 # 复制为 config.yaml 并填入 api_key。
 
 llm:
@@ -102,7 +102,7 @@ embedding:
   chunk_chars: 600
 
 database:
-  url: "sqlite:///./data/novel_engine_next.db"
+  url: "sqlite:///./data/novel_engine.db"
 
 # Pending 仅在章节定稿后产生；以下策略控制哪些候选有资格进入人工审批区。
 pending:

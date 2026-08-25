@@ -1,4 +1,7 @@
-"""Smoke test without LLM: health check + prompt load."""
+"""Smoke test without LLM: health check + prompt load.
+
+Run from the repository root: python -m scripts.smoke_test
+"""
 from __future__ import annotations
 
 from backend.prompts import definitions as P

@@ -613,10 +613,10 @@ const ui = {
 
   renderState(n) {
     const hint = `<div class="card feature-card" style="margin-bottom:12px">
-      <h3>增强能力（novel-engine-next）</h3>
+      <h3>增强能力</h3>
       <ul class="muted" style="font-size:13px;line-height:1.8;margin:0;padding-left:18px">
         <li><strong>写法特征池</strong>：蓝图页 → 写法引擎 → 学习并绑定</li>
-        <li><strong>质量门</strong>：写章后 health + 发布结构审稿；critical 阻断定稿</li>
+        <li><strong>质量门</strong>：写章后 health + 发布结构审稿；critical 会提示，是否阻断定稿取决于 block_finalize（默认不阻断）</li>
         <li><strong>待确认提案</strong>：仅定稿后产生；下方确认后才入正式库（不自动入账）</li>
       </ul>
     </div>`;

@@ -20,7 +20,7 @@ logging.basicConfig(
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 
-app = FastAPI(title="多智能体小说生成引擎 (novel-engine-next)", version="0.2.0")
+app = FastAPI(title="多智能体小说生成引擎 (novel-engine)", version="0.2.0")
 app.include_router(novels.router)
 app.include_router(cocreate.router)
 app.include_router(generation.router)

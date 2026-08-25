@@ -1,4 +1,7 @@
-"""Validate llm.agents keys cover all LLMClient(...) usages."""
+"""Validate llm.agents keys cover all LLMClient(...) usages.
+
+Run from the repository root: python -m scripts.validate_config
+"""
 from __future__ import annotations
 
 import re
