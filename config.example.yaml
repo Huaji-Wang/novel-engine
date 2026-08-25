@@ -122,8 +122,8 @@ pending:
 
 # 质量门（写章 graph + 定稿阻断；可被 novel.quality_gate JSON 覆盖）
 # 提案生命周期：仅定稿时提取 → pending → 人工确认后入正式库（不在写章时自动入账）
-# Community 默认 L2（开源）：展示检查 + 可去 AI 味；不阻断定稿、不自动 rewrite。
-# 云端产品可改为 block_finalize/auto_rewrite_on_critical: true。
+# 默认：展示检查 + 可去 AI 味；不阻断定稿、不自动 rewrite。
+# 需要更严时可将 block_finalize / auto_rewrite_on_critical 改为 true。
 quality_gate:
   block_finalize: false
   auto_rewrite_on_critical: false
